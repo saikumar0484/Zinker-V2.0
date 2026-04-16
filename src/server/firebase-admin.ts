@@ -47,4 +47,4 @@ if (!admin.apps.length) {
 }
 
 export const adminAuth = admin.auth();
-export const adminDb = getFirestore(databaseId);
+export const adminDb = databaseId ? getFirestore(databaseId) : getFirestore();

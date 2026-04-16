@@ -1,11 +1,11 @@
 import express from 'express';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
-import { authRouter } from '../src/server/auth.ts';
-import { zoomRouter } from '../src/server/zoom.ts';
-import { driveRouter } from '../src/server/drive.ts';
-import { recordingsRouter } from '../src/server/recordings.ts';
-import { runSync } from '../src/server/cron.ts';
+import { authRouter } from '../src/server/auth';
+import { zoomRouter } from '../src/server/zoom';
+import { driveRouter } from '../src/server/drive';
+import { recordingsRouter } from '../src/server/recordings';
+import { runSync } from '../src/server/cron';
 
 const app = express();
 

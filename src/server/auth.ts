@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { adminAuth, adminDb } from './firebase-admin.ts';
+import { adminAuth, adminDb } from './firebase-admin';
 
 export const authRouter = Router();
 
