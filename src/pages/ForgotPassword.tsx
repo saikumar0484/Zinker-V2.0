@@ -26,7 +26,8 @@ export function ForgotPassword() {
         setDebugToken(res.data.debugToken);
       }
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Something went wrong');
+      const errorData = err.response?.data?.error;
+      setError(typeof errorData === 'string' ? errorData : 'Something went wrong');
     } finally {
       setLoading(false);
     }

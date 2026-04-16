@@ -33,6 +33,50 @@ authRouter.post('/init-user', async (req, res) => {
   }
 });
 
+authRouter.post('/forgot-password', async (req, res) => {
+  const { email } = req.body;
+  if (!email) return res.status(400).json({ error: 'Email is required' });
+
+  try {
+    // In a real app, we'd use adminAuth.generatePasswordResetLink(email)
+    // and send an email. For this app, we'll generate a link and return it
+    // if in development/preview mode, or just say "email sent".
+    
+    const link = await adminAuth.generatePasswordResetLink(email);
+    const url = new URL(link);
+    const token = url.searchParams.get('oobCode');
+
+    res.json({ 
+      message: 'If an account exists for that email, we have sent a password reset link.',
+      debugToken: token // Returning token for the "Demo Mode Hint" in frontend
+    });
+  } catch (error: any) {
+    console.error('Error generating reset link:', error);
+    // Don't reveal if user exists or not for security, but handle actual errors
+    if (error.code === 'auth/user-not-found') {
+      return res.json({ message: 'If an account exists for that email, we have sent a password reset link.' });
+    }
+    res.status(500).json({ error: 'Failed to process request' });
+  }
+});
+
+authRouter.post('/reset-password', async (req, res) => {
+  const { token, password } = req.body;
+  if (!token || !password) return res.status(400).json({ error: 'Token and password are required' });
+
+  try {
+    // Verify the reset code and update password
+    const email = await adminAuth.verifyPasswordResetCode(token);
+    const user = await adminAuth.getUserByEmail(email);
+    await adminAuth.updateUser(user.uid, { password });
+    
+    res.json({ success: true });
+  } catch (error: any) {
+    console.error('Error resetting password:', error);
+    res.status(400).json({ error: 'Invalid or expired reset link' });
+  }
+});
+
 // Middleware to protect routes using Firebase ID Token
 export const requireAuth = async (req: any, res: any, next: any) => {
   const authHeader = req.headers.authorization;

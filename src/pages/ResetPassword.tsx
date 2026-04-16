@@ -38,7 +38,8 @@ export function ResetPassword() {
       setMessage('Your password has been reset successfully.');
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to reset password');
+      const errorData = err.response?.data?.error;
+      setError(typeof errorData === 'string' ? errorData : 'Failed to reset password');
     } finally {
       setLoading(false);
     }
