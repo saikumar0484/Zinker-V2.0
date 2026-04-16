@@ -1,7 +1,7 @@
 import { Router } from 'express';
-import { db, toObj } from './db';
-import { requireAuth } from './auth';
-import { runSyncForUser } from './cron';
+import { db, toObj } from './db.ts';
+import { requireAuth } from './auth.ts';
+import { runSyncForUser } from './cron.ts';
 
 export const recordingsRouter = Router();
 

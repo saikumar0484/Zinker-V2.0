@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { google } from 'googleapis';
-import { db } from './db';
-import { requireAuth } from './auth';
+import { db } from './db.ts';
+import { requireAuth } from './auth.ts';
 
 export const driveRouter = Router();
 

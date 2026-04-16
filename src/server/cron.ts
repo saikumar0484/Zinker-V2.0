@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import axios from 'axios';
 import { google } from 'googleapis';
 import { format } from 'date-fns';
-import { adminDb } from './firebase-admin';
+import { adminDb } from './firebase-admin.ts';
 
 export function startCronJob() {
   // Run every minute for regular sync

@@ -1,4 +1,4 @@
-import { adminDb, adminAuth } from './firebase-admin';
+import { adminDb, adminAuth } from './firebase-admin.ts';
 
 // Compatibility helpers for the rest of the app
 export const db = adminDb;

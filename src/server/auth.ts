@@ -1,5 +1,19 @@
 import { Router } from 'express';
-import { adminAuth, adminDb } from './firebase-admin';
+import axios from 'axios';
+import fs from 'fs';
+import path from 'path';
+import { adminAuth, adminDb } from './firebase-admin.ts';
+
+let apiKey = '';
+try {
+  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+  if (fs.existsSync(configPath)) {
+    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+    apiKey = config.apiKey;
+  }
+} catch (e) {
+  console.warn('⚠️ Could not read apiKey from firebase-applet-config.json');
+}
 
 export const authRouter = Router();
 
@@ -68,15 +82,19 @@ authRouter.post('/reset-password', async (req, res) => {
   if (!token || !password) return res.status(400).json({ error: 'Token and password are required' });
 
   try {
-    // Verify the reset code and update password
-    const email = await adminAuth.verifyPasswordResetCode(token);
-    const user = await adminAuth.getUserByEmail(email);
-    await adminAuth.updateUser(user.uid, { password });
+    // 1. Verify the reset code using REST API
+    const verifyUrl = `https://identitytoolkit.googleapis.com/v1/accounts:resetPassword?key=${apiKey}`;
+    const verifyRes = await axios.post(verifyUrl, {
+      oobCode: token,
+      newPassword: password
+    });
     
+    // verifyRes.data contains email and requestType
     res.json({ success: true });
   } catch (error: any) {
-    console.error('Error resetting password:', error);
-    res.status(400).json({ error: 'Invalid or expired reset link' });
+    console.error('Error resetting password:', error.response?.data || error.message);
+    const message = error.response?.data?.error?.message || 'Invalid or expired reset link';
+    res.status(400).json({ error: message });
   }
 });
 
