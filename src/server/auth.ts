@@ -46,17 +46,20 @@ authRouter.post('/forgot-password', async (req, res) => {
     const url = new URL(link);
     const token = url.searchParams.get('oobCode');
 
-    res.json({ 
+    return res.json({ 
       message: 'If an account exists for that email, we have sent a password reset link.',
-      debugToken: token // Returning token for the "Demo Mode Hint" in frontend
+      debugToken: token 
     });
   } catch (error: any) {
     console.error('Error generating reset link:', error);
-    // Don't reveal if user exists or not for security, but handle actual errors
+    
     if (error.code === 'auth/user-not-found') {
       return res.json({ message: 'If an account exists for that email, we have sent a password reset link.' });
     }
-    res.status(500).json({ error: 'Failed to process request' });
+    
+    // Provide more detail if it's a configuration error
+    const errorMessage = error.message || 'Failed to process request';
+    res.status(500).json({ error: errorMessage });
   }
 });
 

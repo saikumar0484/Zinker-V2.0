@@ -32,10 +32,18 @@ if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
 }
 
 if (!admin.apps.length) {
-  admin.initializeApp({
-    credential,
-    projectId: projectId,
-  });
+  try {
+    if (!projectId) {
+      throw new Error('Missing FIREBASE_PROJECT_ID or projectId in config');
+    }
+    admin.initializeApp({
+      credential,
+      projectId: projectId,
+    });
+    console.log('✅ Firebase Admin initialized for project:', projectId);
+  } catch (e: any) {
+    console.error('❌ Failed to initialize Firebase Admin:', e.message);
+  }
 }
 
 export const adminAuth = admin.auth();
