@@ -1,0 +1,75 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: users
+    // Fields: email (string), createdAt (timestamp)
+    //
+    // Sub-collection: settings (document: config)
+    // Fields: google_client_id, google_client_secret, google_redirect_uri, 
+    //         google_refresh_token, drive_parent_folder_id, drive_verified (bool), 
+    //         polling_interval (int), last_sync_at (timestamp)
+    //
+    // Sub-collection: zoom_accounts
+    // Fields: account_name, zoom_account_id, zoom_client_id, zoom_client_secret, 
+    //         zoom_verified (bool), createdAt (timestamp)
+    //
+    // Sub-collection: recordings
+    // Fields: zoom_account_id, meeting_id, uuid, meeting_name, start_time, 
+    //         status (string), drive_folder_link, files_uploaded (list), 
+    //         createdAt (timestamp), updatedAt (timestamp)
+    //
+    // ===============================================================
+
+    // Helper Functions
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    // Validation Functions
+    function isValidUser(data) {
+      return data.keys().hasAll(['email', 'createdAt']) &&
+             data.email is string &&
+             data.createdAt is timestamp;
+    }
+
+    function isValidSettings(data) {
+      return data.get('polling_interval', 5) is int &&
+             data.get('drive_verified', false) is bool;
+    }
+
+    function isValidZoomAccount(data) {
+      return data.keys().hasAll(['account_name', 'zoom_account_id', 'zoom_client_id', 'zoom_client_secret']) &&
+             data.account_name is string && data.account_name.size() < 100;
+    }
+
+    function isValidRecording(data) {
+      return data.keys().hasAll(['meeting_id', 'uuid', 'meeting_name', 'start_time', 'status']) &&
+             data.status in ['PENDING', 'PROCESSING', 'COMPLETED', 'FAILED'];
+    }
+
+    // Rules
+    match /users/{userId} {
+      allow read, write: if isOwner(userId);
+
+      match /settings/config {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /zoom_accounts/{accountId} {
+        allow read, write: if isOwner(userId);
+      }
+
+      match /recordings/{recordingId} {
+        allow read, write: if isOwner(userId);
+      }
+    }
+  }
+}
