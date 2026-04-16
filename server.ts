@@ -4,12 +4,12 @@ import path from 'path';
 import cors from 'cors';
 import cookieParser from 'cookie-parser';
 import { fileURLToPath } from 'url';
-import { initDb } from './src/server/db.ts';
-import { authRouter } from './src/server/auth.ts';
-import { zoomRouter } from './src/server/zoom.ts';
-import { driveRouter } from './src/server/drive.ts';
-import { recordingsRouter } from './src/server/recordings.ts';
-import { startCronJob } from './src/server/cron.ts';
+import { initDb } from './src/server/db';
+import { authRouter } from './src/server/auth';
+import { zoomRouter } from './src/server/zoom';
+import { driveRouter } from './src/server/drive';
+import { recordingsRouter } from './src/server/recordings';
+import { startCronJob } from './src/server/cron';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);

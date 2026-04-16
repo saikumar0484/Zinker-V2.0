@@ -27,7 +27,8 @@ export function ForgotPassword() {
       }
     } catch (err: any) {
       const errorData = err.response?.data?.error;
-      setError(typeof errorData === 'string' ? errorData : 'Something went wrong');
+      const errorMessage = typeof errorData === 'string' ? errorData : (err.message || 'Something went wrong');
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

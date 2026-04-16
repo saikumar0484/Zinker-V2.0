@@ -2,17 +2,19 @@ import { Router } from 'express';
 import axios from 'axios';
 import fs from 'fs';
 import path from 'path';
-import { adminAuth, adminDb } from './firebase-admin.ts';
+import { adminAuth, adminDb } from './firebase-admin';
 
-let apiKey = '';
-try {
-  const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
-  if (fs.existsSync(configPath)) {
-    const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
-    apiKey = config.apiKey;
+let apiKey = process.env.FIREBASE_API_KEY || '';
+if (!apiKey) {
+  try {
+    const configPath = path.join(process.cwd(), 'firebase-applet-config.json');
+    if (fs.existsSync(configPath)) {
+      const config = JSON.parse(fs.readFileSync(configPath, 'utf8'));
+      apiKey = config.apiKey;
+    }
+  } catch (e) {
+    console.warn('⚠️ Could not read apiKey from firebase-applet-config.json');
   }
-} catch (e) {
-  console.warn('⚠️ Could not read apiKey from firebase-applet-config.json');
 }
 
 export const authRouter = Router();

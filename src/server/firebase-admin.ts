@@ -19,7 +19,15 @@ const databaseId = process.env.FIREBASE_DATABASE_ID || firebaseConfig.firestoreD
 let credential;
 if (process.env.FIREBASE_SERVICE_ACCOUNT_KEY) {
   try {
-    const serviceAccount = JSON.parse(process.env.FIREBASE_SERVICE_ACCOUNT_KEY);
+    let key = process.env.FIREBASE_SERVICE_ACCOUNT_KEY.trim();
+    // Handle potential double braces typo from user input
+    if (key.startsWith('{{')) {
+      key = key.substring(1);
+    }
+    if (key.endsWith('}}')) {
+      key = key.substring(0, key.length - 1);
+    }
+    const serviceAccount = JSON.parse(key);
     credential = admin.credential.cert(serviceAccount);
     console.log('✅ Loaded Firebase Service Account Key from environment');
   } catch (e: any) {

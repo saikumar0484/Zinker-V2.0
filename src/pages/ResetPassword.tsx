@@ -39,7 +39,8 @@ export function ResetPassword() {
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {
       const errorData = err.response?.data?.error;
-      setError(typeof errorData === 'string' ? errorData : 'Failed to reset password');
+      const errorMessage = typeof errorData === 'string' ? errorData : (err.message || 'Failed to reset password');
+      setError(errorMessage);
     } finally {
       setLoading(false);
     }

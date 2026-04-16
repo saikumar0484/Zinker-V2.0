@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import axios from 'axios';
-import { db, toObj } from './db.ts';
-import { requireAuth } from './auth.ts';
+import { db, toObj } from './db';
+import { requireAuth } from './auth';
 
 export const zoomRouter = Router();
 
