@@ -23,10 +23,14 @@ app.get('/api/health', (req, res) => {
 
 // Cron endpoint
 app.get('/api/cron/sync', async (req, res) => {
-  // Optional: Add a simple secret check to prevent unauthorized triggers
-  // if (req.headers['x-cron-secret'] !== process.env.CRON_SECRET) {
-  //   return res.status(401).end();
-  // }
+  const authHeader = req.headers['authorization'];
+  const secret = process.env.CRON_SECRET;
+  
+  // If a secret is set, require it in the Authorization header
+  if (secret && authHeader !== `Bearer ${secret}`) {
+    console.warn('Unauthorized cron trigger attempt');
+    return res.status(401).json({ error: 'Unauthorized' });
+  }
   
   console.log('Vercel Cron: Starting sync job...');
   try {
