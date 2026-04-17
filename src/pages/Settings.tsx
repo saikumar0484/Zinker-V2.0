@@ -21,9 +21,10 @@ export function Settings() {
   const [settings, setSettings] = useState({
     google_client_id: '',
     google_client_secret: '',
-    google_redirect_uri: window.location.origin + '/settings',
+    google_redirect_uri: window.location.origin + '/api/drive/callback',
     drive_folder_link: '',
     drive_parent_folder_id: '',
+    google_refresh_token: '',
     drive_verified: false,
     polling_interval: 5
   });
@@ -45,7 +46,7 @@ export function Settings() {
           ...prev, 
           ...s,
           drive_verified: !!s.drive_verified,
-          google_redirect_uri: s.google_redirect_uri || window.location.origin + '/settings',
+          google_redirect_uri: s.google_redirect_uri || window.location.origin + '/api/drive/callback',
           drive_folder_link: s.drive_parent_folder_id ? `https://drive.google.com/drive/folders/${s.drive_parent_folder_id}` : ''
         }));
       }
@@ -81,8 +82,29 @@ export function Settings() {
         clientId: newZoomAccount.zoom_client_id,
         clientSecret: newZoomAccount.zoom_client_secret
       });
-      setNewZoomAccount(prev => ({ ...prev, zoom_verified: true }));
-      showDialog('Zoom Connected', 'Zoom credentials validated successfully.', '', 'success');
+      
+      const verifiedAccount = { ...newZoomAccount, zoom_verified: true };
+      setNewZoomAccount(verifiedAccount);
+      
+      // AUTO SAVE after successful test
+      setAddingZoom(true);
+      try {
+        await axios.post('/api/zoom/accounts', verifiedAccount);
+        setNewZoomAccount({
+          account_name: '',
+          zoom_account_id: '',
+          zoom_client_id: '',
+          zoom_client_secret: '',
+          zoom_verified: false
+        });
+        fetchZoomAccounts();
+        showDialog('Zoom Connected & Saved', 'Zoom credentials validated and account added successfully.', '', 'success');
+      } catch (saveError: any) {
+        console.error('Failed to auto-save zoom account', saveError);
+        showDialog('Zoom Connected but Save Failed', 'Credentials are valid, but we couldn\'t save the account to the database.', saveError.response?.data?.error || 'Database error', 'error');
+      } finally {
+        setAddingZoom(false);
+      }
     } catch (error: any) {
       setNewZoomAccount(prev => ({ ...prev, zoom_verified: false }));
       showDialog('Zoom Connection Failed', error.response?.data?.error || 'Unknown error', error.response?.data?.tip || '', 'error');
@@ -121,36 +143,62 @@ export function Settings() {
   };
 
   const handleConnectDrive = async () => {
+    if (!settings.google_client_id || !settings.google_client_secret) {
+      showDialog('Missing Credentials', 'Please enter your Google Client ID and Secret first.', '', 'error');
+      return;
+    }
+
     try {
-      const folderId = extractFolderId(settings.drive_folder_link);
+      // 1. Prepare Auth URL (this saves credentials to a pending table on backend)
       const res = await axios.post('/api/drive/auth-url', {
         clientId: settings.google_client_id,
         clientSecret: settings.google_client_secret,
         redirectUri: settings.google_redirect_uri
       });
       
-      // Save settings first so we don't lose them
-      await handleSaveDrive(false, folderId);
+      // Open Google OAuth in a popup
+      const width = 600;
+      const height = 700;
+      const left = window.screen.width / 2 - width / 2;
+      const top = window.screen.height / 2 - height / 2;
       
-      // Redirect to Google OAuth
-      window.location.href = res.data.url;
+      const authWindow = window.open(
+        res.data.url,
+        'google_drive_oauth',
+        `width=${width},height=${height},left=${left},top=${top}`
+      );
+
+      if (!authWindow) {
+        showDialog('Popup Blocked', 'Please allow popups for this site to connect your Google Drive.', '', 'error');
+      }
     } catch (error) {
       showDialog('Error', 'Failed to generate Auth URL.', 'Check your client ID and secret.', 'error');
     }
   };
 
   const handleTestDrive = async () => {
+    if (!settings.google_refresh_token) {
+      showDialog('Not Authenticated', 'Please connect your Google Drive account first.', '', 'error');
+      return;
+    }
+
     setTestingDrive(true);
     try {
-      const folderId = extractFolderId(settings.drive_folder_link);
-      await axios.post('/api/drive/test', {
+      const res = await axios.post('/api/drive/test', {
         clientId: settings.google_client_id,
         clientSecret: settings.google_client_secret,
         redirectUri: settings.google_redirect_uri,
-        parentFolderId: folderId
+        refreshToken: settings.google_refresh_token,
+        driveFolderLink: settings.drive_folder_link
       });
+      
+      const folderId = res.data.folderId;
       setSettings(prev => ({ ...prev, drive_verified: true, drive_parent_folder_id: folderId }));
-      showDialog('Drive Connected', 'Drive connected successfully. Test file uploaded.', '', 'success');
+      
+      // AUTO SAVE after successful test
+      await handleSaveDrive(false, folderId, settings.google_refresh_token);
+      
+      showDialog('Drive Connected & Saved', 'Drive connection successful and configuration saved. Test file uploaded.', '', 'success');
     } catch (error: any) {
       setSettings(prev => ({ ...prev, drive_verified: false }));
       showDialog('Drive Connection Failed', error.response?.data?.error || 'Unknown error', error.response?.data?.tip || '', 'error');
@@ -159,44 +207,56 @@ export function Settings() {
     }
   };
 
-  const handleSaveDrive = async (showPopup = true, folderIdOverride?: string) => {
+  const handleSaveDrive = async (showPopup = true, folderIdOverride?: string, refreshTokenOverride?: string) => {
     setSavingDrive(true);
     try {
       const folderId = folderIdOverride || extractFolderId(settings.drive_folder_link);
+      const refreshToken = refreshTokenOverride || settings.google_refresh_token;
+
       await axios.post('/api/drive/settings', {
         google_client_id: settings.google_client_id,
         google_client_secret: settings.google_client_secret,
         google_redirect_uri: settings.google_redirect_uri,
+        google_refresh_token: refreshToken,
         drive_parent_folder_id: folderId,
         drive_verified: settings.drive_verified
       });
       if (showPopup) showDialog('Saved', 'Drive settings saved successfully.', '', 'success');
-    } catch (error) {
-      if (showPopup) showDialog('Error', 'Failed to save Drive settings.', '', 'error');
+      return true;
+    } catch (error: any) {
+      console.error('Save settings error:', error);
+      const msg = error.response?.data?.error || 'Failed to save Drive settings.';
+      if (showPopup) showDialog('Error', msg, 'Check if you have run the SQL script in Supabase to add the required columns.', 'error');
+      return false;
     } finally {
       setSavingDrive(false);
     }
   };
 
-  // Handle OAuth callback if code is in URL
+  // Handle OAuth callback message from popup
   useEffect(() => {
-    const urlParams = new URLSearchParams(window.location.search);
-    const code = urlParams.get('code');
-    if (code && settings.google_client_id) {
-      axios.post('/api/drive/callback', {
-        code,
-        clientId: settings.google_client_id,
-        clientSecret: settings.google_client_secret,
-        redirectUri: settings.google_redirect_uri
-      }).then(() => {
-        showDialog('Authenticated', 'Successfully authenticated with Google Drive. You can now test the upload.', '', 'success');
-        // Remove code from URL
-        window.history.replaceState({}, document.title, window.location.pathname);
-      }).catch(() => {
-        showDialog('Auth Failed', 'Failed to authenticate with Google Drive.', '', 'error');
-      });
-    }
-  }, [settings.google_client_id]);
+    const handleMessage = (event: MessageEvent) => {
+      // Validate origin
+      if (!event.origin.endsWith('.run.app') && !event.origin.includes('localhost')) {
+        return;
+      }
+
+      if (event.data?.type === 'GOOGLE_DRIVE_AUTH_SUCCESS') {
+        const tokens = event.data.tokens;
+        if (tokens?.refresh_token) {
+          setSettings(prev => ({ ...prev, google_refresh_token: tokens.refresh_token, drive_verified: false }));
+          showDialog('Authenticated', 'Google Drive linked successfully. Now click "Test Upload" to verify and save.', '', 'success');
+        } else if (tokens?.access_token) {
+          // Sometimes Google doesn't return refresh_token if already granted. 
+          // But our backend 'prompt: consent' should fix that.
+          showDialog('Linked (limited)', 'Google account linked, but we didn\'t receive a refresh token. Try disconnecting and reconnecting.', 'Ensure you grant ALL permissions.', 'error');
+        }
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    return () => window.removeEventListener('message', handleMessage);
+  }, []);
 
   return (
     <div className="space-y-8 max-w-3xl pb-12">
@@ -343,7 +403,7 @@ export function Settings() {
               <Button variant="outline" onClick={handleConnectDrive} disabled={!settings.google_client_id || !settings.google_client_secret}>
                 Connect Google Drive
               </Button>
-              <Button variant="secondary" onClick={handleTestDrive} disabled={testingDrive || !settings.google_client_id || !settings.drive_folder_link}>
+              <Button variant="secondary" onClick={handleTestDrive} disabled={testingDrive || !settings.google_client_id || !settings.drive_folder_link || !settings.google_refresh_token}>
                 {testingDrive ? 'Testing...' : 'Test Upload'}
               </Button>
             </div>

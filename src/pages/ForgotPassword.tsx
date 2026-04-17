@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { Link } from 'react-router-dom';
-import axios from 'axios';
+import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -12,7 +12,6 @@ export function ForgotPassword() {
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
-  const [debugToken, setDebugToken] = useState('');
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -20,15 +19,13 @@ export function ForgotPassword() {
     setMessage('');
     setError('');
     try {
-      const res = await axios.post('/api/auth/forgot-password', { email });
-      setMessage(res.data.message);
-      if (res.data.debugToken) {
-        setDebugToken(res.data.debugToken);
-      }
+      const { error: authError } = await supabase.auth.resetPasswordForEmail(email, {
+        redirectTo: `${window.location.origin}/reset-password`,
+      });
+      if (authError) throw authError;
+      setMessage('If an account exists for that email, we have sent a password reset link.');
     } catch (err: any) {
-      const errorData = err.response?.data?.error;
-      const errorMessage = typeof errorData === 'string' ? errorData : (err.message || 'Something went wrong');
-      setError(errorMessage);
+      setError(err.message || 'Something went wrong');
     } finally {
       setLoading(false);
     }
@@ -64,19 +61,6 @@ export function ForgotPassword() {
                 <CheckCircle2 className="h-4 w-4" />
                 {message}
               </div>
-              
-              {debugToken && (
-                <div className="bg-blue-50 p-4 rounded-md border border-blue-100">
-                  <p className="text-xs font-medium text-blue-800 mb-2 uppercase tracking-wider">Demo Mode Hint:</p>
-                  <p className="text-sm text-blue-700 mb-3">In a real app, you would receive this link via email. For this preview, click below to proceed:</p>
-                  <Link 
-                    to={`/reset-password?token=${debugToken}`} 
-                    className="inline-flex items-center justify-center rounded-md text-sm font-medium transition-colors focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring disabled:pointer-events-none disabled:opacity-50 bg-blue-600 text-white shadow hover:bg-blue-700 h-9 px-4 py-2 w-full"
-                  >
-                    Reset Password Now
-                  </Link>
-                </div>
-              )}
             </div>
           )}
           

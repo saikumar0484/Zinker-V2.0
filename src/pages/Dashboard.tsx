@@ -41,9 +41,9 @@ export function Dashboard() {
 
   const getStatusBadge = (status: string) => {
     switch (status) {
-      case 'COMPLETED': return <Badge className="bg-green-500">Completed</Badge>;
-      case 'PROCESSING': return <Badge className="bg-blue-500">Processing</Badge>;
-      case 'FAILED': return <Badge variant="destructive">Failed</Badge>;
+      case 'synced': return <Badge className="bg-green-500">Synced</Badge>;
+      case 'syncing': return <Badge className="bg-blue-500">Syncing</Badge>;
+      case 'failed': return <Badge variant="destructive">Failed</Badge>;
       default: return <Badge variant="secondary">Pending</Badge>;
     }
   };
@@ -81,7 +81,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-green-600 font-sans">
-              {recordings.filter(r => r.status === 'COMPLETED').length}
+              {recordings.filter(r => r.status === 'synced').length}
             </div>
           </CardContent>
         </Card>
@@ -91,7 +91,7 @@ export function Dashboard() {
           </CardHeader>
           <CardContent>
             <div className="text-3xl font-bold text-amber-600 font-sans">
-              {recordings.filter(r => r.status !== 'COMPLETED').length}
+              {recordings.filter(r => r.status !== 'synced').length}
             </div>
           </CardContent>
         </Card>
@@ -107,10 +107,8 @@ export function Dashboard() {
               <TableHeader className="bg-gray-50/50">
                 <TableRow className="hover:bg-transparent">
                   <TableHead className="font-mono text-[11px] uppercase tracking-wider text-gray-400 py-4">Meeting Name</TableHead>
-                  <TableHead className="font-mono text-[11px] uppercase tracking-wider text-gray-400 py-4">Zoom Account</TableHead>
                   <TableHead className="font-mono text-[11px] uppercase tracking-wider text-gray-400 py-4">Date & Time</TableHead>
                   <TableHead className="font-mono text-[11px] uppercase tracking-wider text-gray-400 py-4">Status</TableHead>
-                  <TableHead className="font-mono text-[11px] uppercase tracking-wider text-gray-400 py-4">Files</TableHead>
                   <TableHead className="font-mono text-[11px] uppercase tracking-wider text-gray-400 py-4">Drive Link</TableHead>
                   <TableHead className="font-mono text-[11px] uppercase tracking-wider text-gray-400 py-4 text-right">Actions</TableHead>
                 </TableRow>
@@ -118,33 +116,26 @@ export function Dashboard() {
               <TableBody>
                 {recordings.length === 0 ? (
                   <TableRow>
-                    <TableCell colSpan={7} className="text-center py-16 text-gray-400 italic font-sans">
+                    <TableCell colSpan={5} className="text-center py-16 text-gray-400 italic font-sans">
                       No recordings found. Check your settings and wait for the next sync.
                     </TableCell>
                   </TableRow>
                 ) : (
                   recordings.map((rec) => {
-                    const files = JSON.parse(rec.files_uploaded || '[]');
                     return (
                       <TableRow key={rec.id} className="hover:bg-gray-50/80 transition-colors border-b border-gray-100 last:border-0">
-                        <TableCell className="font-medium text-gray-900 py-4">{rec.meeting_name}</TableCell>
-                        <TableCell className="py-4">
-                          <Badge variant="outline" className="font-mono text-[10px] uppercase tracking-tight bg-gray-50 text-gray-600 border-gray-200">
-                            {rec.zoom_account_name || 'Unknown'}
-                          </Badge>
-                        </TableCell>
+                        <TableCell className="font-medium text-gray-900 py-4">{rec.topic}</TableCell>
                         <TableCell className="text-gray-600 py-4 font-mono text-sm">{format(new Date(rec.start_time), 'MMM d, yyyy h:mm a')}</TableCell>
                         <TableCell className="py-4">{getStatusBadge(rec.status)}</TableCell>
-                        <TableCell className="text-gray-500 py-4 font-mono text-xs">{files.length} files</TableCell>
                         <TableCell className="py-4">
-                          {rec.drive_folder_link ? (
-                            <a href={rec.drive_folder_link} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1 font-medium text-sm">
+                          {rec.download_url ? (
+                            <a href={rec.download_url} target="_blank" rel="noopener noreferrer" className="text-blue-600 hover:text-blue-800 transition-colors flex items-center gap-1 font-medium text-sm">
                               View Folder <ExternalLink className="w-3.3 h-3.3" />
                             </a>
                           ) : <span className="text-gray-300">—</span>}
                         </TableCell>
                         <TableCell className="text-right py-4">
-                          {rec.status === 'FAILED' && (
+                          {rec.status === 'failed' && (
                             <Button variant="outline" size="sm" onClick={() => handleRetry(rec.id)} className="h-8 px-3 text-xs font-semibold hover:bg-red-50 hover:text-red-600 hover:border-red-200 transition-all">
                               Retry Sync
                             </Button>

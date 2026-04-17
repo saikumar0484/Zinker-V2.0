@@ -7,9 +7,12 @@ export const zoomRouter = Router();
 
 zoomRouter.get('/accounts', requireAuth, async (req: any, res) => {
   try {
-    const accountsRef = db.collection('users').doc(req.userId).collection('zoom_accounts');
-    const querySnapshot = await accountsRef.get();
-    const accounts = querySnapshot.docs.map(toObj);
+    const { data: accounts, error } = await db
+      .from('zoom_accounts')
+      .select('*')
+      .eq('user_id', req.userId);
+
+    if (error) throw error;
     res.json({ accounts });
   } catch (error) {
     console.error('Error fetching zoom accounts:', error);
@@ -21,29 +24,47 @@ zoomRouter.post('/accounts', requireAuth, async (req: any, res) => {
   const { account_name, zoom_account_id, zoom_client_id, zoom_client_secret, zoom_verified } = req.body;
   
   try {
-    const accountsRef = db.collection('users').doc(req.userId).collection('zoom_accounts');
-    const newAccountRef = accountsRef.doc();
-    await newAccountRef.set({
-      account_name,
-      zoom_account_id,
-      zoom_client_id,
-      zoom_client_secret,
-      zoom_verified: !!zoom_verified,
-      createdAt: new Date().toISOString()
-    });
-    
-    res.json({ success: true, id: newAccountRef.id });
-  } catch (error) {
+    const { data, error } = await db
+      .from('zoom_accounts')
+      .insert([
+        {
+          user_id: req.userId,
+          account_name,
+          zoom_account_id,
+          zoom_client_id,
+          zoom_client_secret,
+          zoom_verified: !!zoom_verified,
+          created_at: new Date().toISOString()
+        }
+      ])
+      .select();
+
+    if (error) {
+      console.error('Supabase error inserting zoom account:', error);
+      return res.status(500).json({ error: error.message || 'Database error' });
+    }
+
+    if (!data || data.length === 0) {
+      throw new Error('No data returned from insert');
+    }
+
+    res.json({ success: true, id: data[0].id });
+  } catch (error: any) {
     console.error('Error creating zoom account:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
 });
 
 zoomRouter.delete('/accounts/:id', requireAuth, async (req: any, res) => {
   const { id } = req.params;
   try {
-    const accountRef = db.collection('users').doc(req.userId).collection('zoom_accounts').doc(id);
-    await accountRef.delete();
+    const { error } = await db
+      .from('zoom_accounts')
+      .delete()
+      .eq('id', id)
+      .eq('user_id', req.userId);
+
+    if (error) throw error;
     res.json({ success: true });
   } catch (error) {
     console.error('Error deleting zoom account:', error);

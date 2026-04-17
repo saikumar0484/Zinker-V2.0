@@ -1,3 +1,4 @@
+import 'dotenv/config';
 import express from 'express';
 import { createServer as createViteServer } from 'vite';
 import path from 'path';
@@ -41,13 +42,6 @@ async function startServer() {
 
   // Start Background Job
   startCronJob();
-
-  // Test Firestore Connection
-  import('./src/server/firebase-admin.ts').then(({ adminDb }) => {
-    adminDb.collection('users').limit(1).get()
-      .then(() => console.log('✅ Firestore connection successful'))
-      .catch((err) => console.error('❌ Firestore connection failed:', err.message));
-  });
 
   // Vite middleware for development
   if (process.env.NODE_ENV !== 'production') {

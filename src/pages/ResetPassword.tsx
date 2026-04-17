@@ -1,6 +1,6 @@
-import React, { useState, useEffect } from 'react';
-import { useNavigate, useSearchParams, Link } from 'react-router-dom';
-import axios from 'axios';
+import React, { useState } from 'react';
+import { useNavigate, Link } from 'react-router-dom';
+import { supabase } from '../lib/supabase';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Label } from '../components/ui/label';
@@ -8,20 +8,12 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '../co
 import { AlertCircle, CheckCircle2 } from 'lucide-react';
 
 export function ResetPassword() {
-  const [searchParams] = useSearchParams();
-  const token = searchParams.get('token');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [message, setMessage] = useState('');
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
-
-  useEffect(() => {
-    if (!token) {
-      setError('Invalid or missing token');
-    }
-  }, [token]);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -34,13 +26,15 @@ export function ResetPassword() {
     setError('');
     
     try {
-      await axios.post('/api/auth/reset-password', { token, password });
+      const { error: authError } = await supabase.auth.updateUser({
+        password: password
+      });
+      if (authError) throw authError;
+      
       setMessage('Your password has been reset successfully.');
       setTimeout(() => navigate('/login'), 3000);
     } catch (err: any) {
-      const errorData = err.response?.data?.error;
-      const errorMessage = typeof errorData === 'string' ? errorData : (err.message || 'Failed to reset password');
-      setError(errorMessage);
+      setError(err.message || 'Failed to reset password');
     } finally {
       setLoading(false);
     }
@@ -70,7 +64,7 @@ export function ResetPassword() {
                 <Label htmlFor="confirmPassword">Confirm New Password</Label>
                 <Input id="confirmPassword" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} required minLength={6} />
               </div>
-              <Button type="submit" className="w-full" disabled={loading || !token}>
+              <Button type="submit" className="w-full" disabled={loading}>
                 {loading ? 'Resetting...' : 'Reset Password'}
               </Button>
             </form>

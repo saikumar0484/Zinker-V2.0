@@ -7,9 +7,13 @@ export const recordingsRouter = Router();
 
 recordingsRouter.get('/', requireAuth, async (req: any, res) => {
   try {
-    const recordingsRef = db.collection('users').doc(req.userId).collection('recordings');
-    const querySnapshot = await recordingsRef.orderBy('createdAt', 'desc').get();
-    const recordings = querySnapshot.docs.map(toObj);
+    const { data: recordings, error } = await db
+      .from('recordings')
+      .select('*')
+      .eq('user_id', req.userId)
+      .order('created_at', { ascending: false });
+
+    if (error) throw error;
     res.json({ recordings });
   } catch (error) {
     console.error('Error fetching recordings:', error);
@@ -32,8 +36,13 @@ recordingsRouter.post('/sync', requireAuth, async (req: any, res) => {
 recordingsRouter.post('/:id/retry', requireAuth, async (req: any, res) => {
   const { id } = req.params;
   try {
-    const recordingRef = db.collection('users').doc(req.userId).collection('recordings').doc(id);
-    await recordingRef.update({ status: 'PENDING', updatedAt: new Date().toISOString() });
+    const { error } = await db
+      .from('recordings')
+      .update({ status: 'pending' })
+      .eq('id', id)
+      .eq('user_id', req.userId);
+
+    if (error) throw error;
     res.json({ success: true });
   } catch (error) {
     console.error('Retry failed:', error);

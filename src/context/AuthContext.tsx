@@ -1,6 +1,6 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { onAuthStateChanged, signOut, User } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
+import { User } from '@supabase/supabase-js';
 import axios from 'axios';
 
 interface AuthContextType {
@@ -20,11 +20,20 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, async (firebaseUser) => {
-      if (firebaseUser) {
-        const token = await firebaseUser.getIdToken();
-        axios.defaults.headers.common['Authorization'] = `Bearer ${token}`;
-        setUser(firebaseUser);
+    // Check active sessions and sets the user
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      if (session) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${session.access_token}`;
+        setUser(session.user);
+      }
+      setLoading(false);
+    });
+
+    // Listen for changes on auth state (logged in, signed out, etc.)
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, session) => {
+      if (session) {
+        axios.defaults.headers.common['Authorization'] = `Bearer ${session.access_token}`;
+        setUser(session.user);
       } else {
         delete axios.defaults.headers.common['Authorization'];
         setUser(null);
@@ -32,11 +41,11 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       setLoading(false);
     });
 
-    return () => unsubscribe();
+    return () => subscription.unsubscribe();
   }, []);
 
   const logout = async () => {
-    await signOut(auth);
+    await supabase.auth.signOut();
   };
 
   return (

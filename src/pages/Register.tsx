@@ -1,7 +1,6 @@
 import React, { useState } from 'react';
 import { useNavigate, Link } from 'react-router-dom';
-import { createUserWithEmailAndPassword } from 'firebase/auth';
-import { auth } from '../lib/firebase';
+import { supabase } from '../lib/supabase';
 import axios from 'axios';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
@@ -12,20 +11,33 @@ export function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [error, setError] = useState('');
+  const [loading, setLoading] = useState(false);
   const navigate = useNavigate();
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setLoading(true);
+    setError('');
     try {
-      const userCredential = await createUserWithEmailAndPassword(auth, email, password);
-      // Initialize user in backend (create settings etc)
-      await axios.post('/api/auth/init-user', { 
-        uid: userCredential.user.uid,
-        email: userCredential.user.email 
+      const { data, error: authError } = await supabase.auth.signUp({
+        email,
+        password,
       });
+      if (authError) throw authError;
+      
+      if (data.user) {
+        // Initialize user in backend (create settings etc)
+        await axios.post('/api/auth/init-user', { 
+          uid: data.user.id,
+          email: data.user.email 
+        });
+      }
       navigate('/');
     } catch (err: any) {
-      setError(err.message || 'Registration failed');
+      const errorMessage = err.response?.data?.details || err.response?.data?.error || err.message || 'Registration failed';
+      setError(errorMessage);
+    } finally {
+      setLoading(false);
     }
   };
 

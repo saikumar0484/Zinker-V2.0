@@ -2,7 +2,7 @@ import cron from 'node-cron';
 import axios from 'axios';
 import { google } from 'googleapis';
 import { format } from 'date-fns';
-import { adminDb } from './firebase-admin';
+import { supabaseAdmin } from './supabase-admin';
 
 export function startCronJob() {
   // Run every minute for regular sync
@@ -15,13 +15,12 @@ export function startCronJob() {
   cron.schedule('0 22 * * *', async () => {
     console.log('Running nightly retry for failed recordings...');
     try {
-      const usersSnap = await adminDb.collection('users').get();
-      for (const userDoc of usersSnap.docs) {
-        const recordingsSnap = await userDoc.ref.collection('recordings').where('status', '==', 'FAILED').get();
-        for (const recDoc of recordingsSnap.docs) {
-          await recDoc.ref.update({ status: 'PENDING', updatedAt: new Date().toISOString() });
-        }
-      }
+      const { error } = await supabaseAdmin
+        .from('recordings')
+        .update({ status: 'pending' })
+        .eq('status', 'failed');
+      
+      if (error) throw error;
       runSync();
     } catch (error) {
       console.error('Nightly retry failed:', error);
@@ -31,21 +30,31 @@ export function startCronJob() {
 
 export async function runSyncForUser(userId: string) {
   try {
-    const userRef = adminDb.collection('users').doc(userId);
-    const settingsSnap = await userRef.collection('settings').doc('config').get();
-    const userSetting = settingsSnap.data();
+    const { data: settings, error: settingsError } = await supabaseAdmin
+      .from('settings')
+      .select('*')
+      .eq('user_id', userId)
+      .single();
 
-    if (!userSetting || !userSetting.drive_verified) return;
+    if (settingsError || !settings || !settings.drive_verified) return;
 
-    const zoomAccountsSnap = await userRef.collection('zoom_accounts').where('zoom_verified', '==', true).get();
+    const { data: zoomAccounts, error: accountsError } = await supabaseAdmin
+      .from('zoom_accounts')
+      .select('*')
+      .eq('user_id', userId)
+      .eq('zoom_verified', true);
     
-    for (const accountDoc of zoomAccountsSnap.docs) {
-      const account = { id: accountDoc.id, ...accountDoc.data() };
-      await processUserRecordings(userId, userSetting, account);
+    if (accountsError || !zoomAccounts) return;
+    
+    for (const account of zoomAccounts) {
+      await processUserRecordings(userId, settings, account);
     }
 
     // Update last_sync_at
-    await userRef.collection('settings').doc('config').update({ last_sync_at: new Date().toISOString() });
+    await supabaseAdmin
+      .from('settings')
+      .update({ last_sync_at: new Date().toISOString() })
+      .eq('user_id', userId);
   } catch (error) {
     console.error(`Error processing user ${userId}:`, error);
   }
@@ -53,21 +62,29 @@ export async function runSyncForUser(userId: string) {
 
 export async function runSync() {
   try {
-    const usersSnap = await adminDb.collection('users').get();
+    const { data: users, error: usersError } = await supabaseAdmin
+      .from('profiles')
+      .select('id');
+
+    if (usersError || !users) return;
+
     const now = new Date();
 
-    for (const userDoc of usersSnap.docs) {
-      const userId = userDoc.id;
-      const settingsSnap = await userDoc.ref.collection('settings').doc('config').get();
-      const userSetting = settingsSnap.data();
+    for (const user of users) {
+      const userId = user.id;
+      const { data: settings, error: settingsError } = await supabaseAdmin
+        .from('settings')
+        .select('*')
+        .eq('user_id', userId)
+        .single();
 
-      if (!userSetting || !userSetting.drive_verified) continue;
+      if (settingsError || !settings || !settings.drive_verified) continue;
 
       // Check if it's time to sync based on polling_interval
-      if (userSetting.last_sync_at) {
-        const lastSync = new Date(userSetting.last_sync_at);
+      if (settings.last_sync_at) {
+        const lastSync = new Date(settings.last_sync_at);
         const diffMinutes = (now.getTime() - lastSync.getTime()) / (1000 * 60);
-        if (diffMinutes < (userSetting.polling_interval || 5)) {
+        if (diffMinutes < (settings.polling_interval || 5)) {
           continue; // Skip this user for now
         }
       }
@@ -113,35 +130,45 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
     const meetings = response.data.meetings || [];
 
     for (const meeting of meetings) {
-      // 3. Check Firestore
-      const recordingsRef = adminDb.collection('users').doc(userId).collection('recordings');
-      const existingSnap = await recordingsRef.where('uuid', '==', meeting.uuid).get();
+      // 3. Check Supabase
+      const { data: existing, error: fetchError } = await supabaseAdmin
+        .from('recordings')
+        .select('*')
+        .eq('user_id', userId)
+        .eq('zoom_id', meeting.uuid)
+        .single();
 
-      let recordingDoc;
-      if (existingSnap.empty) {
-        // Insert as PENDING
-        recordingDoc = await recordingsRef.add({
-          zoom_account_id: zoomAccount.id,
-          zoom_account_name: zoomAccount.account_name,
-          meeting_id: meeting.id,
-          uuid: meeting.uuid,
-          meeting_name: meeting.topic,
-          start_time: meeting.start_time,
-          status: 'PENDING',
-          files_uploaded: [],
-          createdAt: new Date().toISOString(),
-          updatedAt: new Date().toISOString()
-        });
+      if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+
+      let recordingId;
+      if (!existing) {
+        // Insert as pending
+        const { data: newRec, error: insertError } = await supabaseAdmin
+          .from('recordings')
+          .insert([
+            {
+              user_id: userId,
+              zoom_id: meeting.uuid,
+              topic: meeting.topic,
+              start_time: meeting.start_time,
+              duration: meeting.duration,
+              status: 'pending',
+              created_at: new Date().toISOString()
+            }
+          ])
+          .select();
+        
+        if (insertError) throw insertError;
+        recordingId = newRec[0].id;
       } else {
-        const existing = existingSnap.docs[0];
-        if (existing.data().status === 'COMPLETED' || existing.data().status === 'PROCESSING') {
+        if (existing.status === 'synced' || existing.status === 'syncing') {
           continue;
         }
-        recordingDoc = existing.ref;
+        recordingId = existing.id;
       }
 
-      // 4. Process PENDING or FAILED recordings
-      await uploadRecording(userId, recordingDoc.id, meeting, setting, accessToken);
+      // 4. Process pending or failed recordings
+      await uploadRecording(userId, recordingId, meeting, setting, accessToken);
     }
   } catch (error) {
     console.error(`Error processing Zoom account ${zoomAccount.id} for user ${userId}:`, error);
@@ -150,10 +177,12 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
 
 async function uploadRecording(userId: string, recordingId: string, meeting: any, setting: any, zoomToken: string) {
   const { drive_parent_folder_id, google_client_id, google_client_secret, google_redirect_uri, google_refresh_token } = setting;
-  const recordingRef = adminDb.collection('users').doc(userId).collection('recordings').doc(recordingId);
   
-  // Mark as PROCESSING
-  await recordingRef.update({ status: 'PROCESSING', updatedAt: new Date().toISOString() });
+  // Mark as syncing
+  await supabaseAdmin
+    .from('recordings')
+    .update({ status: 'syncing' })
+    .eq('id', recordingId);
 
   try {
     if (!google_refresh_token) {
@@ -182,14 +211,18 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
     const folderId = folder.data.id;
     const folderLink = folder.data.webViewLink;
     
-    const uploadedFiles = [];
-    
     if (!meeting.recording_files || meeting.recording_files.length === 0) {
       console.log(`No recording files found for meeting ${meeting.uuid}. It might still be processing.`);
-      await recordingRef.update({ status: 'PENDING', updatedAt: new Date().toISOString() });
+      await supabaseAdmin
+        .from('recordings')
+        .update({ status: 'pending' })
+        .eq('id', recordingId);
       return;
     }
     
+    // For simplicity, we'll just track the first file's size and download URL if needed
+    const firstFile = meeting.recording_files[0];
+
     for (const file of meeting.recording_files) {
       console.log(`Uploading file ${file.id} (${file.file_type})`);
       
@@ -208,25 +241,29 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
         body: response.data,
       };
 
-      const uploadedFile = await drive.files.create({
+      await drive.files.create({
         requestBody: fileMetadata,
         media: media,
         fields: 'id',
       });
-
-      uploadedFiles.push(uploadedFile.data.id);
     }
 
-    // Mark as COMPLETED
-    await recordingRef.update({
-      status: 'COMPLETED',
-      drive_folder_link: folderLink,
-      files_uploaded: uploadedFiles,
-      updatedAt: new Date().toISOString()
-    });
+    // Mark as synced
+    await supabaseAdmin
+      .from('recordings')
+      .update({
+        status: 'synced',
+        drive_file_id: folderId,
+        download_url: folderLink,
+        file_size: firstFile.file_size
+      })
+      .eq('id', recordingId);
 
   } catch (error) {
     console.error(`Upload failed for meeting ${meeting.uuid}:`, error);
-    await recordingRef.update({ status: 'FAILED', updatedAt: new Date().toISOString() });
+    await supabaseAdmin
+      .from('recordings')
+      .update({ status: 'failed' })
+      .eq('id', recordingId);
   }
 }

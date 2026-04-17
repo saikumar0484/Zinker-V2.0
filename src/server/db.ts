@@ -1,13 +1,10 @@
-import { adminDb, adminAuth } from './firebase-admin';
+import { supabaseAdmin } from './supabase-admin';
 
-// Compatibility helpers for the rest of the app
-export const db = adminDb;
-export const auth = adminAuth;
-export const toObj = (doc: any) => ({ id: doc.id, ...doc.data() });
+export const db = supabaseAdmin;
+export const toObj = (doc: any) => doc; // Supabase returns objects directly
 
 export function initDb() {
-  console.log('Firestore Admin initialized');
+  console.log('Supabase Admin initialized');
 }
 
-// Re-export common types/helpers if needed, but routes should use adminDb methods
-export { adminDb, adminAuth };
+export { supabaseAdmin as adminDb };
