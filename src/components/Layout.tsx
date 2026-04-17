@@ -1,7 +1,7 @@
 import { Outlet, Link, useLocation } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 import { Button } from './ui/button';
-import { Video, Settings, LogOut } from 'lucide-react';
+import { Video, Settings, LogOut, LayoutDashboard, History } from 'lucide-react';
 
 export function Layout() {
   const { logout } = useAuth();
@@ -10,24 +10,30 @@ export function Layout() {
   return (
     <div className="min-h-screen bg-gray-50 flex">
       {/* Sidebar */}
-      <div className="w-64 bg-white border-r border-gray-200 flex flex-col">
+      <div className="w-64 bg-white border-r border-gray-200 flex flex-col fixed h-full shadow-sm z-10">
         <div className="p-6">
-          <h1 className="text-xl font-bold flex items-center gap-2">
-            <Video className="w-6 h-6 text-blue-600" />
+          <h1 className="text-xl font-extrabold flex items-center gap-2 text-indigo-900 uppercase tracking-tighter">
+            <Video className="w-7 h-7 text-blue-600" />
             ZoomSync
           </h1>
         </div>
         
-        <nav className="flex-1 px-4 space-y-2">
+        <nav className="flex-1 px-4 space-y-2 mt-4">
           <Link to="/">
-            <Button variant={location.pathname === '/' ? 'secondary' : 'ghost'} className="w-full justify-start">
-              <Video className="w-4 h-4 mr-2" />
+            <Button variant={(location.pathname === '/' || location.pathname === '/dashboard') ? 'secondary' : 'ghost'} className={`w-full justify-start font-bold ${(location.pathname === '/' || location.pathname === '/dashboard') ? 'bg-blue-50 text-blue-700' : 'text-gray-500'}`}>
+              <LayoutDashboard className="w-4 h-4 mr-3" />
               Dashboard
             </Button>
           </Link>
+          <Link to="/history">
+            <Button variant={location.pathname === '/history' ? 'secondary' : 'ghost'} className={`w-full justify-start font-bold ${location.pathname === '/history' ? 'bg-blue-50 text-blue-700' : 'text-gray-500'}`}>
+              <History className="w-4 h-4 mr-3" />
+              History
+            </Button>
+          </Link>
           <Link to="/settings">
-            <Button variant={location.pathname === '/settings' ? 'secondary' : 'ghost'} className="w-full justify-start">
-              <Settings className="w-4 h-4 mr-2" />
+            <Button variant={location.pathname === '/settings' ? 'secondary' : 'ghost'} className={`w-full justify-start font-bold ${location.pathname === '/settings' ? 'bg-blue-50 text-blue-700' : 'text-gray-500'}`}>
+              <Settings className="w-4 h-4 mr-3" />
               Settings
             </Button>
           </Link>
@@ -42,8 +48,8 @@ export function Layout() {
       </div>
 
       {/* Main Content */}
-      <div className="flex-1 overflow-auto">
-        <div className="p-8 max-w-6xl mx-auto">
+      <div className="flex-1 overflow-auto ml-64">
+        <div className="p-8 max-w-7xl mx-auto">
           <Outlet />
         </div>
       </div>

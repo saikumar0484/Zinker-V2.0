@@ -36,7 +36,10 @@ export async function runSyncForUser(userId: string) {
       .eq('user_id', userId)
       .single();
 
-    if (settingsError || !settings || !settings.drive_verified) return;
+    if (settingsError || !settings) return;
+
+    // We proceed with Zoom sync even if Drive isn't verified yet, 
+    // so recordings appear in History as 'pending'
 
     const { data: zoomAccounts, error: accountsError } = await supabaseAdmin
       .from('zoom_accounts')
@@ -143,28 +146,80 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
       let recordingId;
       if (!existing) {
         // Insert as pending
+        const insertData: any = {
+          user_id: userId,
+          zoom_id: meeting.uuid,
+          topic: meeting.topic,
+          start_time: meeting.start_time,
+          duration: meeting.duration,
+          status: 'pending',
+          created_at: new Date().toISOString()
+        };
+
+        // Store account tracking info
+        if (zoomAccount.id) {
+          insertData.zoom_account_id = zoomAccount.id;
+        }
+        if (zoomAccount.account_name) {
+          insertData.zoom_account_name = zoomAccount.account_name;
+        }
+
         const { data: newRec, error: insertError } = await supabaseAdmin
           .from('recordings')
-          .insert([
-            {
-              user_id: userId,
-              zoom_id: meeting.uuid,
-              topic: meeting.topic,
-              start_time: meeting.start_time,
-              duration: meeting.duration,
-              status: 'pending',
-              created_at: new Date().toISOString()
-            }
-          ])
+          .insert([insertData])
           .select();
         
-        if (insertError) throw insertError;
-        recordingId = newRec[0].id;
+        if (insertError) {
+          // If columns don't exist, try again without the extra tracking fields
+          if (insertError.message?.includes('column') && insertError.message?.includes('does not exist')) {
+            const cleanData = { ...insertData };
+            delete cleanData.zoom_account_id;
+            delete cleanData.zoom_account_name;
+            
+            const { data: retryRec, error: retryError } = await supabaseAdmin
+              .from('recordings')
+              .insert([cleanData])
+              .select();
+            if (retryError) throw retryError;
+            recordingId = retryRec[0].id;
+          } else {
+            throw insertError;
+          }
+        } else {
+          recordingId = newRec[0].id;
+        }
       } else {
+        recordingId = existing.id;
+
+        // Backfill missing account name or storage info for existing records during sync
+        if (zoomAccount.id && (!existing.zoom_account_name || !existing.file_size)) {
+          const updateData: any = {};
+          if (!existing.zoom_account_name) updateData.zoom_account_name = zoomAccount.account_name;
+          
+          // Calculate and backfill total size if missing/0 (useful for correcting historical data)
+          if (!existing.file_size && meeting.recording_files) {
+            updateData.file_size = meeting.recording_files.reduce((acc: number, f: any) => acc + (f.file_size || 0), 0);
+          }
+          
+          if (Object.keys(updateData).length > 0) {
+            try {
+              const { error } = await supabaseAdmin
+                .from('recordings')
+                .update(updateData)
+                .eq('id', existing.id);
+                
+              if (error && error.code !== '42703' && !error.message?.includes('column')) {
+                 console.error(`Backfill failed for ${existing.id}:`, error.message);
+              }
+            } catch (err) {
+              // Silently catch exceptions
+            }
+          }
+        }
+
         if (existing.status === 'synced' || existing.status === 'syncing') {
           continue;
         }
-        recordingId = existing.id;
       }
 
       // 4. Process pending or failed recordings
@@ -185,8 +240,13 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
     .eq('id', recordingId);
 
   try {
-    if (!google_refresh_token) {
-      throw new Error('Google Drive is not authenticated');
+    if (!google_refresh_token || !setting.drive_verified) {
+      console.log('Google Drive not ready, skipping upload for recording:', recordingId);
+      await supabaseAdmin
+        .from('recordings')
+        .update({ status: 'pending' })
+        .eq('id', recordingId);
+      return;
     }
 
     const oauth2Client = new google.auth.OAuth2(google_client_id, google_client_secret, google_redirect_uri);
@@ -220,8 +280,11 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
       return;
     }
     
-    // For simplicity, we'll just track the first file's size and download URL if needed
-    const firstFile = meeting.recording_files[0];
+    // Calculate total size across all files for this meeting
+    let totalMeetingSize = 0;
+    if (meeting.recording_files && meeting.recording_files.length > 0) {
+      totalMeetingSize = meeting.recording_files.reduce((acc: number, f: any) => acc + (f.file_size || 0), 0);
+    }
 
     for (const file of meeting.recording_files) {
       console.log(`Uploading file ${file.id} (${file.file_type})`);
@@ -255,7 +318,7 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
         status: 'synced',
         drive_file_id: folderId,
         download_url: folderLink,
-        file_size: firstFile.file_size
+        file_size: totalMeetingSize
       })
       .eq('id', recordingId);
 

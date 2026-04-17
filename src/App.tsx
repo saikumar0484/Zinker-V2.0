@@ -11,6 +11,7 @@ import { Register } from './pages/Register';
 import { ForgotPassword } from './pages/ForgotPassword';
 import { ResetPassword } from './pages/ResetPassword';
 import { Dashboard } from './pages/Dashboard';
+import { History } from './pages/History';
 import { Settings } from './pages/Settings';
 import { AuthProvider, useAuth } from './context/AuthContext';
 
@@ -32,6 +33,8 @@ export default function App() {
           <Route path="/reset-password" element={<ResetPassword />} />
           <Route path="/" element={<ProtectedRoute><Layout /></ProtectedRoute>}>
             <Route index element={<Dashboard />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="history" element={<History />} />
             <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
