@@ -134,14 +134,16 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
 
     for (const meeting of meetings) {
       // 3. Check Supabase
-      const { data: existing, error: fetchError } = await supabaseAdmin
+      const { data: existingRecords, error: fetchError } = await supabaseAdmin
         .from('recordings')
         .select('*')
         .eq('user_id', userId)
         .eq('zoom_id', meeting.uuid)
-        .single();
+        .limit(1);
 
-      if (fetchError && fetchError.code !== 'PGRST116') throw fetchError;
+      if (fetchError) throw fetchError;
+      
+      const existing = existingRecords && existingRecords.length > 0 ? existingRecords[0] : null;
 
       let recordingId;
       if (!existing) {
@@ -308,11 +310,8 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
         .eq('id', recordingId);
     }
     
-    // Calculate total size across all files for this meeting
+    // Process and upload all files
     let totalMeetingSize = 0;
-    if (meeting.recording_files && meeting.recording_files.length > 0) {
-      totalMeetingSize = meeting.recording_files.reduce((acc: number, f: any) => acc + (f.file_size || 0), 0);
-    }
 
     for (const file of meeting.recording_files) {
       console.log(`Uploading file ${file.id} (${file.file_type})`);
@@ -332,11 +331,18 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
         body: response.data,
       };
 
-      await drive.files.create({
+      const uploadedFile = await drive.files.create({
         requestBody: fileMetadata,
         media: media,
-        fields: 'id',
+        fields: 'id, size',
       });
+      
+      // Accurately capture the exact uploaded bytes from Google Drive instead of relying on Zoom's payload
+      if (uploadedFile.data.size) {
+        totalMeetingSize += parseInt(uploadedFile.data.size, 10);
+      } else {
+        totalMeetingSize += (file.file_size || 0);
+      }
     }
 
     // Mark as synced
