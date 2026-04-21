@@ -69,6 +69,7 @@ export function History() {
     syncing: 'bg-blue-500 hover:bg-blue-600 animate-pulse',
     failed: 'bg-red-500 hover:bg-red-600 cursor-pointer',
     pending: 'bg-gray-400 hover:bg-gray-500',
+    processing: 'bg-indigo-500 hover:bg-indigo-600 animate-pulse',
   };
 
   const handleViewError = (downloadUrlStr: string) => {
@@ -81,6 +82,24 @@ export function History() {
       }
     } catch (e) {
       setSelectedError({ msg: downloadUrlStr || 'Unknown error', tip: 'No additional tips available for this error.' });
+    }
+  };
+
+  const isStuckSyncing = (rec: any) => {
+    if (rec.status !== 'syncing') return false;
+    const createdAt = new Date(rec.created_at).getTime();
+    const now = new Date().getTime();
+    return (now - createdAt) > 2 * 60 * 60 * 1000;
+  };
+
+  const handleRestartSync = async (id: number) => {
+    try {
+      setRecordings(prev => prev.map(r => r.id === id ? { ...r, status: 'pending' } : r));
+      await axios.post(`/api/recordings/${id}/retry`);
+      fetchRecordings();
+    } catch (error) {
+      console.error('Restart failed', error);
+      fetchRecordings();
     }
   };
 
@@ -235,7 +254,16 @@ export function History() {
                       </TableCell>
                       <TableCell className="text-gray-500 py-4 font-mono text-[11px]">{rec.duration} mins</TableCell>
                       <TableCell className="py-4">
-                        {rec.status === 'failed' ? (
+                        {isStuckSyncing(rec) ? (
+                          <Button 
+                            onClick={() => handleRestartSync(rec.id)} 
+                            size="sm" 
+                            variant="destructive" 
+                            className="h-6 text-[10px] uppercase font-bold tracking-wider px-2 py-0 border-none bg-orange-500 hover:bg-orange-600"
+                          >
+                            <RefreshCw className="w-3 h-3 mr-1" /> Restart Sync
+                          </Button>
+                        ) : rec.status === 'failed' ? (
                           <button onClick={() => handleViewError(rec.download_url)} className="focus:outline-none focus:ring-2 focus:ring-red-400 rounded" title="Click for error details">
                             <Badge className={`${statusColors[rec.status]} text-[10px] border-none flex items-center gap-1`}>
                               {rec.status.toUpperCase()}
@@ -243,7 +271,7 @@ export function History() {
                             </Badge>
                           </button>
                         ) : (
-                          <Badge className={`${statusColors[rec.status]} text-[10px] border-none`}>
+                          <Badge className={`${statusColors[rec.status] || 'bg-gray-400'} text-[10px] border-none`}>
                             {rec.status.toUpperCase()}
                           </Badge>
                         )}

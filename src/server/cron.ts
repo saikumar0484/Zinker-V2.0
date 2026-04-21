@@ -220,16 +220,42 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
       }
 
       // 4. Process pending or failed recordings
-      await uploadRecording(userId, recordingId, meeting, setting, accessToken);
+      // Prepare the DB record to pass to uploadRecording so we can reuse folder IDs
+      let dbRecord = existing;
+      if (!dbRecord) {
+        // Fetch the newly inserted record to have its full state
+        const { data: fetchNew } = await supabaseAdmin.from('recordings').select('*').eq('id', recordingId).single();
+        dbRecord = fetchNew;
+      }
+      await uploadRecording(userId, recordingId, meeting, setting, accessToken, dbRecord);
     }
   } catch (error) {
     console.error(`Error processing Zoom account ${zoomAccount.id} for user ${userId}:`, error);
   }
 }
 
-async function uploadRecording(userId: string, recordingId: string, meeting: any, setting: any, zoomToken: string) {
+async function uploadRecording(userId: string, recordingId: string, meeting: any, setting: any, zoomToken: string, dbRecord: any) {
   const { drive_parent_folder_id, google_client_id, google_client_secret, google_redirect_uri, google_refresh_token } = setting;
   
+  // Check if zoomed meeting is still processing
+  let isProcessing = false;
+  if (!meeting.recording_files || meeting.recording_files.length === 0) {
+    isProcessing = true;
+  } else {
+    for (const file of meeting.recording_files) {
+      if (file.status === 'processing') isProcessing = true;
+    }
+  }
+
+  if (isProcessing) {
+    console.log(`Meeting ${meeting.uuid} is still processing in Zoom.`);
+    await supabaseAdmin
+      .from('recordings')
+      .update({ status: 'processing' })
+      .eq('id', recordingId);
+    return;
+  }
+
   // Mark as syncing
   await supabaseAdmin
     .from('recordings')
@@ -251,30 +277,35 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
     
     const drive = google.drive({ version: 'v3', auth: oauth2Client });
 
-    const folderName = `${meeting.topic} - ${format(new Date(meeting.start_time), 'yyyy-MM-dd hh:mm a')}`;
-    
-    // Create folder in Drive
-    const folderMetadata = {
-      name: folderName,
-      mimeType: 'application/vnd.google-apps.folder',
-      parents: drive_parent_folder_id ? [drive_parent_folder_id] : undefined,
-    };
+    let folderId = dbRecord?.drive_file_id;
+    let folderLink = dbRecord?.download_url;
 
-    const folder = await drive.files.create({
-      requestBody: folderMetadata,
-      fields: 'id, webViewLink',
-    });
+    if (!folderId || folderId.startsWith('{')) { // Also ignore if download_url happens to be JSON error obj
+      const folderName = `${meeting.topic} - ${format(new Date(meeting.start_time), 'yyyy-MM-dd hh:mm a')}`;
+      
+      // Create folder in Drive
+      const folderMetadata = {
+        name: folderName,
+        mimeType: 'application/vnd.google-apps.folder',
+        parents: drive_parent_folder_id ? [drive_parent_folder_id] : undefined,
+      };
 
-    const folderId = folder.data.id;
-    const folderLink = folder.data.webViewLink;
-    
-    if (!meeting.recording_files || meeting.recording_files.length === 0) {
-      console.log(`No recording files found for meeting ${meeting.uuid}. It might still be processing.`);
+      const folder = await drive.files.create({
+        requestBody: folderMetadata,
+        fields: 'id, webViewLink',
+      });
+
+      folderId = folder.data.id;
+      folderLink = folder.data.webViewLink;
+
+      // Save immediately to prevent duplicate folders if upload fails later
       await supabaseAdmin
         .from('recordings')
-        .update({ status: 'pending' })
+        .update({
+          drive_file_id: folderId,
+          download_url: folderLink,
+        })
         .eq('id', recordingId);
-      return;
     }
     
     // Calculate total size across all files for this meeting
