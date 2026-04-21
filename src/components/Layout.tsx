@@ -14,7 +14,7 @@ export function Layout() {
         <div className="p-6">
           <h1 className="text-xl font-extrabold flex items-center gap-2 text-indigo-900 uppercase tracking-tighter">
             <Video className="w-7 h-7 text-blue-600" />
-            ZoomSync
+            Zinker
           </h1>
         </div>
         

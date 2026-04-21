@@ -189,7 +189,7 @@ driveRouter.post('/test', requireAuth, async (req: any, res) => {
     
     // Create a test folder
     const folderMetadata = {
-      name: 'ZoomSync_Test_Folder',
+      name: 'Zinker_Test_Folder',
       mimeType: 'application/vnd.google-apps.folder',
       parents: parentFolderId ? [parentFolderId] : undefined,
     };
@@ -207,7 +207,7 @@ driveRouter.post('/test', requireAuth, async (req: any, res) => {
 
     const media = {
       mimeType: 'text/plain',
-      body: 'This is a test file from ZoomSync.',
+      body: 'This is a test file from Zinker.',
     };
 
     await drive.files.create({

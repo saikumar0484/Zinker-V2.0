@@ -5,20 +5,20 @@ import { format } from 'date-fns';
 import { supabaseAdmin } from './supabase-admin';
 
 export function startCronJob() {
-  // Run every minute for regular sync
-  cron.schedule('* * * * *', async () => {
+  // Run every 5 minutes to see new meetings
+  cron.schedule('*/5 * * * *', async () => {
     console.log('Running regular Zoom recording sync job...');
     runSync();
   });
 
   // Nightly retry at 10:00 PM
   cron.schedule('0 22 * * *', async () => {
-    console.log('Running nightly retry for failed recordings...');
+    console.log('Running nightly retry for failed/stuck recordings...');
     try {
       const { error } = await supabaseAdmin
         .from('recordings')
         .update({ status: 'pending' })
-        .eq('status', 'failed');
+        .in('status', ['failed', 'syncing']);
       
       if (error) throw error;
       runSync();
@@ -83,15 +83,6 @@ export async function runSync() {
 
       if (settingsError || !settings || !settings.drive_verified) continue;
 
-      // Check if it's time to sync based on polling_interval
-      if (settings.last_sync_at) {
-        const lastSync = new Date(settings.last_sync_at);
-        const diffMinutes = (now.getTime() - lastSync.getTime()) / (1000 * 60);
-        if (diffMinutes < (settings.polling_interval || 5)) {
-          continue; // Skip this user for now
-        }
-      }
-
       await runSyncForUser(userId);
     }
   } catch (error) {
@@ -124,13 +115,22 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
     from.setDate(from.getDate() - 30);
     const fromStr = from.toISOString().split('T')[0];
 
-    const response = await axios.get(`https://api.zoom.us/v2/users/me/recordings?from=${fromStr}`, {
-      headers: {
-        Authorization: `Bearer ${accessToken}`,
-      },
-    });
+    const meetings: any[] = [];
+    let next_page_token = '';
 
-    const meetings = response.data.meetings || [];
+    do {
+      const url = `https://api.zoom.us/v2/users/me/recordings?from=${fromStr}&page_size=300${next_page_token ? `&next_page_token=${next_page_token}` : ''}`;
+      const response = await axios.get(url, {
+        headers: {
+          Authorization: `Bearer ${accessToken}`,
+        },
+      });
+
+      if (response.data.meetings) {
+        meetings.push(...response.data.meetings);
+      }
+      next_page_token = response.data.next_page_token || '';
+    } while (next_page_token);
 
     for (const meeting of meetings) {
       // 3. Check Supabase
@@ -157,9 +157,6 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
         };
 
         // Store account tracking info
-        if (zoomAccount.id) {
-          insertData.zoom_account_id = zoomAccount.id;
-        }
         if (zoomAccount.account_name) {
           insertData.zoom_account_name = zoomAccount.account_name;
         }
@@ -173,7 +170,6 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
           // If columns don't exist, try again without the extra tracking fields
           if (insertError.message?.includes('column') && insertError.message?.includes('does not exist')) {
             const cleanData = { ...insertData };
-            delete cleanData.zoom_account_id;
             delete cleanData.zoom_account_name;
             
             const { data: retryRec, error: retryError } = await supabaseAdmin
@@ -183,6 +179,7 @@ async function processUserRecordings(userId: string, setting: any, zoomAccount: 
             if (retryError) throw retryError;
             recordingId = retryRec[0].id;
           } else {
+            console.error('Insert error details:', insertError);
             throw insertError;
           }
         } else {
