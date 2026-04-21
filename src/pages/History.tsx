@@ -7,7 +7,8 @@ import { Badge } from '../components/ui/badge';
 import { Button } from '../components/ui/button';
 import { Input } from '../components/ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '../components/ui/select';
-import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, History as HistoryIcon, Search, Calendar, X } from 'lucide-react';
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from '../components/ui/dialog';
+import { ChevronLeft, ChevronRight, ExternalLink, RefreshCw, History as HistoryIcon, Search, Calendar, X, AlertCircle, Lightbulb } from 'lucide-react';
 
 export function History() {
   const [recordings, setRecordings] = useState<any[]>([]);
@@ -18,6 +19,7 @@ export function History() {
   const [search, setSearch] = useState('');
   const [startDate, setStartDate] = useState('');
   const [endDate, setEndDate] = useState('');
+  const [selectedError, setSelectedError] = useState<{msg: string, tip: string} | null>(null);
 
   const fetchRecordings = useCallback(async (silent = false) => {
     if (!silent) setLoading(true);
@@ -65,8 +67,21 @@ export function History() {
   const statusColors: Record<string, string> = {
     synced: 'bg-green-500 hover:bg-green-600',
     syncing: 'bg-blue-500 hover:bg-blue-600 animate-pulse',
-    failed: 'bg-red-500 hover:bg-red-600',
+    failed: 'bg-red-500 hover:bg-red-600 cursor-pointer',
     pending: 'bg-gray-400 hover:bg-gray-500',
+  };
+
+  const handleViewError = (downloadUrlStr: string) => {
+    try {
+      if (downloadUrlStr) {
+        const errObj = JSON.parse(downloadUrlStr);
+        setSelectedError(errObj);
+      } else {
+        setSelectedError({ msg: 'Unknown error', tip: 'No additional details were saved for this error.' });
+      }
+    } catch (e) {
+      setSelectedError({ msg: downloadUrlStr || 'Unknown error', tip: 'No additional tips available for this error.' });
+    }
   };
 
   const totalPages = Math.ceil(total / limit);
@@ -220,15 +235,24 @@ export function History() {
                       </TableCell>
                       <TableCell className="text-gray-500 py-4 font-mono text-[11px]">{rec.duration} mins</TableCell>
                       <TableCell className="py-4">
-                        <Badge className={`${statusColors[rec.status]} text-[10px] border-none`}>
-                          {rec.status.toUpperCase()}
-                        </Badge>
+                        {rec.status === 'failed' ? (
+                          <button onClick={() => handleViewError(rec.download_url)} className="focus:outline-none focus:ring-2 focus:ring-red-400 rounded" title="Click for error details">
+                            <Badge className={`${statusColors[rec.status]} text-[10px] border-none flex items-center gap-1`}>
+                              {rec.status.toUpperCase()}
+                              <AlertCircle className="w-3 h-3" />
+                            </Badge>
+                          </button>
+                        ) : (
+                          <Badge className={`${statusColors[rec.status]} text-[10px] border-none`}>
+                            {rec.status.toUpperCase()}
+                          </Badge>
+                        )}
                       </TableCell>
                       <TableCell className="py-4 font-mono text-[10px] text-gray-500">
                         {rec.file_size ? `${(rec.file_size / (1024 * 1024)).toFixed(1)}MB` : '0.0MB'}
                       </TableCell>
                       <TableCell className="py-4">
-                        {rec.download_url ? (
+                        {rec.status === 'synced' && rec.download_url ? (
                           <a href={rec.download_url} target="_blank" rel="noopener noreferrer" className="inline-flex items-center gap-1 text-blue-600 hover:text-blue-800 font-bold text-xs">
                             View Folder <ExternalLink className="w-3 h-3" />
                           </a>
@@ -301,6 +325,35 @@ export function History() {
           </div>
         </CardContent>
       </Card>
+
+      <Dialog open={!!selectedError} onOpenChange={(open) => !open && setSelectedError(null)}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle className="flex items-center gap-2 text-red-600">
+              <AlertCircle className="w-5 h-5" />
+              Sync Error Details
+            </DialogTitle>
+          </DialogHeader>
+          {selectedError && (
+            <div className="space-y-4 pt-2">
+              <div className="bg-red-50 p-4 rounded-md border border-red-100">
+                <h4 className="text-sm font-bold text-red-800 mb-1">Error Message</h4>
+                <p className="text-sm text-red-700 break-words font-mono text-xs max-h-32 overflow-y-auto">{selectedError.msg}</p>
+              </div>
+              <div className="bg-amber-50 p-4 rounded-md border border-amber-100 flex gap-3 items-start">
+                <Lightbulb className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                <div>
+                  <h4 className="text-sm font-bold text-amber-800 mb-1">Resolution Tip</h4>
+                  <p className="text-sm text-amber-700">{selectedError.tip}</p>
+                </div>
+              </div>
+              <div className="flex justify-end mt-4">
+                <Button onClick={() => setSelectedError(null)} variant="outline">Close</Button>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

@@ -319,11 +319,31 @@ async function uploadRecording(userId: string, recordingId: string, meeting: any
       })
       .eq('id', recordingId);
 
-  } catch (error) {
+  } catch (error: any) {
     console.error(`Upload failed for meeting ${meeting.uuid}:`, error);
+    
+    // Determine user-friendly tip based on common error patterns
+    let tip = "Ensure your Zoom account and Google Drive are properly connected and have sufficient permissions/storage.";
+    let msg = error.message || 'Unknown error';
+    
+    if (msg.includes('Insufficient storage') || msg.includes('quota')) {
+      tip = "Your Google Drive is out of space. Please clear some files or upgrade your Google One storage plan.";
+    } else if (msg.includes('token') || msg.includes('auth') || msg.includes('refresh') || msg.includes('Invalid Credentials')) {
+      tip = "Your cloud storage authorization may have expired. Please go to Settings, disconnect, and reconnect your Google Drive account.";
+    } else if (msg.includes('File not found') || msg.includes('404')) {
+      tip = "The recording file was not found on Zoom. It might have been deleted manually before syncing could complete.";
+    } else if (msg.includes('network') || msg.includes('socket') || msg.includes('ECONNRESET')) {
+      tip = "A temporary network issue occurred during transfer. The nightly job will automatically retry this.";
+    }
+
+    const errorDetails = JSON.stringify({ msg, tip });
+
     await supabaseAdmin
       .from('recordings')
-      .update({ status: 'failed' })
+      .update({ 
+        status: 'failed',
+        download_url: errorDetails 
+      })
       .eq('id', recordingId);
   }
 }
